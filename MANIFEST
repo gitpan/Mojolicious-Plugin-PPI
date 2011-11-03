@@ -1,0 +1,9 @@
+Build.PL
+lib/Mojolicious/Plugin/PPI.pm
+MANIFEST			This list of files
+META.json
+META.yml
+README.pod
+t/basic.t
+t/override.t
+t/test.pl
