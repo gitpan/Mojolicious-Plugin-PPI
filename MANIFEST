@@ -1,9 +1,10 @@
 Build.PL
 lib/Mojolicious/Plugin/PPI.pm
 MANIFEST			This list of files
-META.json
-META.yml
 README.pod
 t/basic.t
-t/override.t
+t/src_folder.t
 t/test.pl
+t/toggle_button.t
+META.yml
+META.json
