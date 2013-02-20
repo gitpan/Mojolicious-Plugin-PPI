@@ -6,35 +6,41 @@ use Test::More tests => 10;
 use Mojolicious::Lite;
 use Test::Mojo;
 
-plugin 'PPI', 'toggle_button' => 1;
+plugin 'PPI';
 
-get '/file'   => 'file';
-get '/toggle' => 'toggle';
+get '/block' => 'block';
+get '/block-inline' => 'block-inline';
 
 my $t = Test::Mojo->new;
-$t->get_ok('/file')
+$t->get_ok('/block')
   ->status_is(200)
+  ->element_exists( 'pre.ppi-code' )
   ->text_is('span.symbol' => '@world')
-  ->element_exists('span.line_number')
-  ->element_exists_not('input');
+  ->element_exists('span.line_number');
 
-$t->get_ok('/toggle')
+$t->get_ok('/block-inline')
   ->status_is(200)
+  ->element_exists( 'span.ppi-code' )
   ->text_is('span.symbol' => '@world')
-  ->element_exists('span.line_number')
-  ->element_exists('input');
+  ->element_exists_not('span.line_number');
 
 __DATA__
 
-@@ file.html.ep
+@@ block.html.ep
 % title 'Inline';
 % layout 'basic';
-Hello <%= ppi 't/test.pl', toggle_button => 0 %>
+Hello
+%= ppi begin
+  @world
+%= end
 
-@@ toggle.html.ep
+@@ block-inline.html.ep
 % title 'Inline';
 % layout 'basic';
-Hello <%= ppi 't/test.pl' %>
+Hello
+%= ppi {inline => 1 }, begin
+  @world
+%= end
 
 @@ layouts/basic.html.ep
   <!doctype html><html>

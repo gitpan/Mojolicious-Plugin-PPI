@@ -1,9 +1,15 @@
 Build.PL
+Changes
+examples/quine.pl
 lib/Mojolicious/Plugin/PPI.pm
+lib/Mojolicious/Plugin/PPI/public/ppi.css
+lib/Mojolicious/Plugin/PPI/public/ppi.js
 MANIFEST			This list of files
 README.pod
 t/basic.t
+t/block.t
 t/src_folder.t
+t/static.t
 t/test.pl
 t/toggle_button.t
 META.yml

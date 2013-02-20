@@ -4,15 +4,18 @@ Mojolicious::Plugin::PPI - Mojolicious Plugin for Rendering Perl Code Using PPI
 
 =head1 SYNOPSIS
 
-  # Mojolicious
-  $self->plugin('PPI');
+ # Mojolicious
+ $self->plugin('PPI');
 
-  # Mojolicious::Lite
-  plugin 'PPI';
+ # Mojolicious::Lite
+ plugin 'PPI';
+
+ # In your template
+ Perl is as simple as <%= ppi q{say "Hello World"} %>.
 
 =head1 DESCRIPTION
 
-L<Mojolicious::Plugin::PPI> is a L<Mojolicious> plugin.
+L<Mojolicious::Plugin::PPI> is a L<Mojolicious> plugin which adds Perl syntax highlighting via L<PPI> and L<PPI::HTML>. Perl is notoriously hard to properly syntax highlight, but since L<PPI> is made especially for parsing Perl this plugin can help you show off your Perl scripts in your L<Mojolicious> webapp.
 
 =head1 METHODS
 
@@ -33,7 +36,7 @@ C<< toggle_button => [0/1] >> specifies whether a "Toggle Line Numbers" button (
 
 =item *
 
-C<< src_folder => 'directory' >> specifies a folder where input files will be found. When specified, if the directory is not found, a warning is issued, but not fatally. This functionality is not (currently) available for per-file alteration, so only use if all files will be in this folder (or subfolder). Remeber, if this option is not specified, a full or relative path may be passed to C<ppi>. 
+C<< src_folder => 'directory' >> specifies a folder where input files will be found. When specified, if the directory is not found, a warning is issued, but not fatally. This functionality is not (currently) available for per-file alteration, so only use if all files will be in this folder (or subfolder). Remeber, if this option is not specified, a full or relative path may be passed to L</ppi>. 
 
 =back
 
@@ -70,17 +73,29 @@ C<< toggle_button => [0/1] >> specifies if a button should be created to toggle 
 
 =back
 
-=head2 C<ppi_js>
+=head2 C<ppi_plugin>
+
+Holds the active instance of L<Mojolicious::Plugin::PPI>.
+
+=head1 STATIC FILES
+
+These bundled files are added to your static files paths.
+
+=head2 C</ppi.js>
+
+ %= javascript '/ppi.js'
 
 Returns a Javascript snippet useful when using L<Mojolicious::Plugin::PPI>.
 
-=head2 C<ppi_css>
+=head2 C</ppi.css>
+
+ %= stylesheet '/ppi.css'
 
 Returns a CSS snippet for coloring the L<PPI::HTML> generated HTML. Also provides a background for the code blocks.
 
 =head1 SEE ALSO
 
-L<Mojolicious>, L<Mojolicious::Guides>, L<http://mojolicio.us>.
+L<Mojolicious>, L<PPI>, L<PPI::HTML>
 
 L<PPI>, L<PPI::HTML>
 
@@ -94,9 +109,8 @@ Joel Berger, E<lt>joel.a.berger@gmail.comE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2011 by Joel Berger
+Copyright (C) 2011-2013 by Joel Berger
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself.
 
-=cut

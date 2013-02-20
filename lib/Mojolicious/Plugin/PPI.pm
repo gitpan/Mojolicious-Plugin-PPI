@@ -1,117 +1,162 @@
 package Mojolicious::Plugin::PPI;
+
 use Mojo::Base 'Mojolicious::Plugin';
 
-use Time::HiRes 'gettimeofday';
-use File::Spec::Functions 'catfile';
+use Mojo::Util;
+
+use File::Basename ();
+use File::Spec;
+use File::ShareDir ();
 
 use PPI::HTML;
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
+$VERSION = eval $VERSION;
 
-my $ppi = PPI::HTML->new( line_numbers => 1 );
+has 'id' => 1;
+has 'line_numbers'  => 1;
+has 'no_check_file' => 0;
+has 'ppi_html' => sub { PPI::HTML->new( line_numbers => 1 ) };
+has 'src_folder';
+
+has 'static_path' => sub {
+  my $local = File::Spec->catdir(File::Basename::dirname(__FILE__), 'PPI', 'public');
+  return $local if -d $local;
+
+  my $share = File::ShareDir::dist_dir('Mojolicious-Plugin-PPI');
+  return $share if -d $share;
+
+  warn "Cannot find static content for Mojolicious::Plugin::PPI, (checked $local and $share). The bundled javascript and css files will not work correctly.\n";
+};
+
+has 'template' => <<'TEMPLATE';
+% my @tag = $opts->{inline} ? 'span' : 'pre';
+% push @tag, class => 'ppi-code';
+% push @tag, id => $opts->{id} if $opts->{id};
+%= tag @tag, begin
+%== $pod
+% end
+  % if ( $opts->{toggle_button} ) {
+    <br>
+    %= submit_button 'Toggle Line Numbers', class => 'ppi-toggle', onClick => "toggleLineNumbers('$opts->{id}')"
+  % }
+TEMPLATE
+
+has 'toggle_button' => 0;
 
 sub register {
-  my ($self, $app, $args) = @_;
+  my ($plugin, $app) = (shift, shift);
+  $plugin->initialize($app, @_);
 
-  my $default_toggle_button = $args->{toggle_button} || 0;
+  push @{$app->static->paths}, $plugin->static_path;
 
-  my $src_folder = $args->{src_folder} || '';
-  if ( $src_folder ) {
-    warn "Could not find folder $src_folder\n" unless (-d $src_folder);
+  $app->helper( ppi_plugin => sub { $plugin } );
+  $app->helper( ppi => sub { $_[0]->ppi_plugin->ppi(@_) } );
+}
+
+sub initialize {
+  my ($plugin, $app, $args) = @_;
+
+  if (exists $args->{toggle_button}) {
+    $plugin->toggle_button( delete $args->{toggle_button} );
   }
 
-  $app->helper( 
-    ppi => sub {
-      my $c = shift;
-      my $input = shift;
-      my %opts = ref $_[0] ? %{ $_[0] } : @_;
+  if ( my $src_folder = delete $args->{src_folder} ) {
+    $plugin->src_folder( $src_folder );     
+  }
 
-      my $filename = $src_folder ? catfile( $src_folder, $input ) : $input;
+  if ( keys %$args ) {
+    warn "Unknown option(s): " . join(", ", keys %$args) . "\n";
+  }
+}
 
-      my $return;
-      if ( -e $filename ) {
-        ## if the input is the filename of an existing file
+sub ppi {
+  my $plugin = shift;
+  my $c = shift;
 
-        $opts{toggle_button} //= $default_toggle_button;               #/# highlight fix
-
-        if ( $opts{toggle_button} ) {
-          ## a hide button will require a div id, so make one if not specified
-          $opts{id} //= 'ppi' . join('', gettimeofday());              #/# highlight fix
-          ## override if toggle_button is to be used
-          $opts{line_numbers} = 1;
-        }
-
-        $ppi->{line_numbers} = $opts{line_numbers} // 1;               #/# highlight fix
-        $return .= '<div class="code"' . (defined $opts{id} ? " id=\"$opts{id}\"" : '') . '>' ;
-        $return .= $ppi->html( $filename );
-        if ($opts{toggle_button}) {
-          $return .= qq[\n<br><input type="submit" value="Toggle Line Numbers" onClick="toggleLineNumbers('$opts{id}')" />];
-        }
-        $return .= '</div>';
-
-      } else {
-        ## if not, then treat as an inline snippet
-        ## do not use line numbers on inline snippets
-        $ppi->{line_numbers} = $opts{line_numbers} // 0;               #/# highlight fix
-        $return = $ppi->html( \$input );
-      }
-
-      return $return;
-    }
+  my %opts = (
+    id => $plugin->_generate_id,
+    inline => 0,
+    line_numbers => $plugin->line_numbers,
+    toggle_button => $plugin->toggle_button,
   );
 
-  $app->helper( ppi_js => sub { return <<'JS'; } );
-function toggleLineNumbers(id) {
-  var spans = document.getElementById(id).getElementsByTagName("span");
-  var span;
-  for (i = 0; i < spans.length; i++){
-    span = spans[i];
-    if(span.className=='line_number'){
-      if (span.style.display!="none") {
-        span.style.display = "none";
-      } else {
-        span.style.display = "inline";
-      }
-    }
+  %opts = ( %opts, $plugin->_process_helper_opts(@_) );
+
+  if ( $opts{inline} ) {
+    $opts{line_numbers}  = 0;
+    $opts{toggle_button} = 0;
   }
+
+  $opts{line_numbers} = 1 if $opts{toggle_button};
+
+  $plugin->ppi_html->{line_numbers} = $opts{line_numbers};
+  my $pod = $plugin->ppi_html->html( $opts{file} ? $opts{file} : \$opts{string} );
+
+  my $return = $c->render( 
+    partial => 1, 
+    inline  => $plugin->template,
+    opts    => \%opts,
+    pod     => $pod,
+  );
+
+  return $return;
 }
-JS
 
-  $app->helper( ppi_css => sub { return <<'CSS' } );
-.code { 
-  display: inline-block;
-  min-width: 400px;
-  background-color: #F8F8F8;
-  border-radius: 10px;
-  padding: 15px;
+sub _check_file {
+  my ($self, $file) = @_;
+  return undef if $self->no_check_file;
+
+  if ( my $folder = $self->src_folder ) {
+    die "Could not find folder $folder\n" unless -d $folder;
+    $file = File::Spec->catfile( $folder, $file );
+  }
+
+  return -e $file ? $file : undef;
 }
 
-.cast { color: #339999 ;}
-.comment { color: #008080 ;}
-.core { color: #FF0000 ;}
-.double { color: #999999 ;}
-.heredoc_content { color: #FF0000 ;}
-.interpolate { color: #999999 ;}
-.keyword { color: #BD2E2A ;}
-.line_number { color: #666666 ;}
-.literal { color: #999999 ;}
-.magic { color: #0099FF ;}
-.match { color: #9900FF ;}
-.number { color: #990000 ;}
-.operator { color: #DD7700 ;}
-.pod { color: #008080 ;}
-.pragma { color: #A33AF7 ;}
-.regex { color: #9900FF ;}
-.single { color: #999999 ;}
-.substitute { color: #9900FF ;}
-.symbol { color: #389A7D ;}
-.transliterate { color: #9900FF ;}
-.word { color: #999999 ;}
-CSS
+sub _generate_id {
+  my $plugin = shift;
+  my $id = $plugin->id;
+  $plugin->id( ($id + 1) % 10000 );
+  return "ppi$id";
+}
 
+sub _process_helper_opts {
+  my $plugin = shift;
+
+  my $string = do {
+    no warnings 'uninitialized';
+    if (ref $_[-1] eq 'CODE') {
+      Mojo::Util::trim pop->();
+    }
+  };
+
+  my %opts;
+  if (ref $_[-1]) {
+    %opts = %{ pop() };
+  }
+
+  if ( @_ % 2 ) { 
+    die "Cannot specify both a string and a block\n" if $string;
+
+    $string = shift;
+    $opts{file} = $plugin->_check_file($string);
+    unless ( $opts{file} ) {
+      $opts{inline} //= 1;                #/# fix highlight
+    }
+
+  }
+
+  %opts = (%opts, @_) if @_;
+
+  $opts{string} = $string unless defined $opts{file};
+
+  return %opts;
 }
 
 1;
+
 __END__
 
 =head1 NAME
@@ -120,15 +165,18 @@ Mojolicious::Plugin::PPI - Mojolicious Plugin for Rendering Perl Code Using PPI
 
 =head1 SYNOPSIS
 
-  # Mojolicious
-  $self->plugin('PPI');
+ # Mojolicious
+ $self->plugin('PPI');
 
-  # Mojolicious::Lite
-  plugin 'PPI';
+ # Mojolicious::Lite
+ plugin 'PPI';
+
+ # In your template
+ Perl is as simple as <%= ppi q{say "Hello World"} %>.
 
 =head1 DESCRIPTION
 
-L<Mojolicious::Plugin::PPI> is a L<Mojolicious> plugin.
+L<Mojolicious::Plugin::PPI> is a L<Mojolicious> plugin which adds Perl syntax highlighting via L<PPI> and L<PPI::HTML>. Perl is notoriously hard to properly syntax highlight, but since L<PPI> is made especially for parsing Perl this plugin can help you show off your Perl scripts in your L<Mojolicious> webapp.
 
 =head1 METHODS
 
@@ -149,7 +197,7 @@ C<< toggle_button => [0/1] >> specifies whether a "Toggle Line Numbers" button (
 
 =item *
 
-C<< src_folder => 'directory' >> specifies a folder where input files will be found. When specified, if the directory is not found, a warning is issued, but not fatally. This functionality is not (currently) available for per-file alteration, so only use if all files will be in this folder (or subfolder). Remeber, if this option is not specified, a full or relative path may be passed to C<ppi>. 
+C<< src_folder => 'directory' >> specifies a folder where input files will be found. When specified, if the directory is not found, a warning is issued, but not fatally. This functionality is not (currently) available for per-file alteration, so only use if all files will be in this folder (or subfolder). Remeber, if this option is not specified, a full or relative path may be passed to L</ppi>. 
 
 =back
 
@@ -186,17 +234,29 @@ C<< toggle_button => [0/1] >> specifies if a button should be created to toggle 
 
 =back
 
-=head2 C<ppi_js>
+=head2 C<ppi_plugin>
+
+Holds the active instance of L<Mojolicious::Plugin::PPI>.
+
+=head1 STATIC FILES
+
+These bundled files are added to your static files paths.
+
+=head2 C</ppi.js>
+
+ %= javascript '/ppi.js'
 
 Returns a Javascript snippet useful when using L<Mojolicious::Plugin::PPI>.
 
-=head2 C<ppi_css>
+=head2 C</ppi.css>
+
+ %= stylesheet '/ppi.css'
 
 Returns a CSS snippet for coloring the L<PPI::HTML> generated HTML. Also provides a background for the code blocks.
 
 =head1 SEE ALSO
 
-L<Mojolicious>, L<Mojolicious::Guides>, L<http://mojolicio.us>.
+L<Mojolicious>, L<PPI>, L<PPI::HTML>
 
 L<PPI>, L<PPI::HTML>
 
@@ -210,7 +270,7 @@ Joel Berger, E<lt>joel.a.berger@gmail.comE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2011 by Joel Berger
+Copyright (C) 2011-2013 by Joel Berger
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself.

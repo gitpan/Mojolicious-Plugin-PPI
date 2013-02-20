@@ -11,29 +11,27 @@ plugin 'PPI', 'src_folder' => 't';
 get '/file'   => 'file';
 
 my $t = Test::Mojo->new;
-$t->get_ok('/file')->status_is(200)->content_like(qr'@world')->content_like(qr'span class="line_number"')->content_unlike(qr'onClick');
+$t->get_ok('/file')
+  ->status_is(200)
+  ->text_is('span.symbol' => '@world')
+  ->element_exists('span.line_number')
+  ->element_exists_not('input');
 
 done_testing;
-
-#print STDERR $t->tx->res->to_string;
 
 __DATA__
 
 @@ file.html.ep
 % title 'Inline';
 % layout 'basic';
-Hello <%== ppi 'test.pl' %>
+Hello <%= ppi 'test.pl' %>
 
 @@ layouts/basic.html.ep
   <!doctype html><html>
     <head>
       <title><%= title %></title>
-      %= javascript begin 
-        %== ppi_js
-      %= end
-      %= stylesheet begin
-        %== ppi_css
-      %= end
+      %= javascript 'ppi.js'
+      %= stylesheet 'ppi.css'
     </head>
     <body><%= content %></body>
   </html>
